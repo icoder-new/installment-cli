@@ -1,10 +1,11 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
-	"github.com/icoder-new/installment-cli/internal/domain"
+	"github.com/icoder-new/installment-cli/internal/delivery/cli"
 	"github.com/icoder-new/installment-cli/internal/infra/sms"
 	"github.com/icoder-new/installment-cli/internal/usecase"
 )
@@ -12,17 +13,34 @@ import (
 func main() {
 	smsSender := sms.NewConsoleSender()
 	calculator := usecase.NewInstallmentCalculator(smsSender)
+	handler := cli.NewHandler(calculator)
 
-	res, err := calculator.CalculateInstallment(domain.Product{
-		Type:         domain.Computer,
-		Price:        1000,
-		PhoneNumber:  "+992909010101",
-		PeriodMonths: 6,
-	})
-	if err != nil {
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Использование: %s [ПАРАМЕТРЫ]
+
+Параметры:
+  -h, --help             Показать эту справку
+  -i, --interactive      Включить интерактивный режим
+  -p, --product ТОВАР    Тип товара (Смартфон, Компьютер, Телевизор)
+  -c, --cost ЦЕНА       Цена товара в сомони
+  -n, --number НОМЕР    Номер телефона клиента
+  -m, --months МЕСЯЦЫ   Срок рассрочки в месяцах
+
+Примеры:
+  %[1]s -p Смартфон -c 1000 -n +992001234567 -m 6
+  %[1]s --product=Компьютер --cost=2000 --number=+992001234567 --months=12
+  %[1]s -i
+  %[1]s --interactive
+
+Для интерактивного режима можно указать часть параметров, 
+а остальные ввести в диалоговом режиме:
+  %[1]s -p Телевизор -i
+
+`, os.Args[0])
+	}
+
+	if err := handler.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Ошибка: %v\n", err)
 		os.Exit(1)
 	}
-
-	fmt.Printf("Итого к оплате: %.2f сомони\n", res)
 }
