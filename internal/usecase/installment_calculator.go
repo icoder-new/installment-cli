@@ -18,6 +18,11 @@ func NewInstallmentCalculator(smsSender domain.SMSSender) *InstallmentCalculator
 
 func (uc *InstallmentCalculator) CalculateInstallment(product domain.Product) (float64, error) {
 	totalPayment := product.CalculateTotalPayment()
+
+	if err := product.Validate(); err != nil {
+		return 0, err
+	}
+
 	overpayment := totalPayment - product.Price
 
 	message := fmt.Sprintf(
