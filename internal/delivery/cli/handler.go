@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
 	"math"
 	"os"
@@ -15,89 +14,54 @@ import (
 )
 
 type Handler struct {
-	calculator      *usecase.InstallmentCalculator
-	interactiveMode bool
+	calculator *usecase.InstallmentCalculator
 }
 
 func NewHandler(calculator *usecase.InstallmentCalculator) *Handler {
 	return &Handler{
-		calculator:      calculator,
-		interactiveMode: false,
+		calculator: calculator,
 	}
 }
 
 func (h *Handler) parseFlags() (domain.Product, error) {
-	help := flag.Bool("h", false, "Показать справку")
-	helpLong := flag.Bool("help", false, "Показать справку (полная форма)")
+	flags := ParseFlags()
 
-	interactive := flag.Bool("i", false, "Интерактивный режим")
-	interactiveLong := flag.Bool("interactive", false, "Интерактивный режим (полная форма)")
-
-	productType := flag.String("p", "", "Тип товара (Смартфон, Компьютер, Телевизор)")
-	productTypeLong := flag.String("product", "", "Тип товара (полная форма)")
-
-	price := flag.Float64("c", 0, "Цена товара в сомони")
-	priceLong := flag.Float64("cost", 0, "Цена товара в сомони (полная форма)")
-
-	phone := flag.String("n", "", "Номер телефона клиента")
-	phoneLong := flag.String("number", "", "Номер телефона клиента (полная форма)")
-
-	months := flag.Int("m", 0, "Срок рассрочки в месяцах")
-	monthsLong := flag.Int("months", 0, "Срок рассрочки в месяцах (полная форма)")
-
-	flag.Parse()
-
-	if *help || *helpLong {
-		flag.Usage()
-		os.Exit(0)
+	if err := flags.Validate(); err != nil {
+		return domain.Product{}, err
 	}
-
-	h.interactiveMode = *interactive || *interactiveLong
-
-	if *productType == "" && *productTypeLong != "" {
-		productType = productTypeLong
-	}
-
-	if *price == 0 && *priceLong != 0 {
-		price = priceLong
-	}
-
-	if *phone == "" && *phoneLong != "" {
-		phone = phoneLong
-	}
-
-	if *months == 0 && *monthsLong != 0 {
-		months = monthsLong
-	}
-
-	if h.interactiveMode {
-		if *productType != "" || *price > 0 || *phone != "" || *months > 0 {
-			return h.collectInteractiveInputWithDefaults(*productType, *price, *phone, *months)
+	if flags.Interactive {
+		if flags.ProductType != "" || flags.Price > 0 || flags.PhoneNumber != "" || flags.Months > 0 {
+			return h.collectInteractiveInputWithDefaults(flags)
 		}
 		return h.collectInteractiveInput()
 	}
 
-	if *productType == "" || *price <= 0 || *phone == "" || *months == 0 {
-		flag.Usage()
-		return domain.Product{}, fmt.Errorf("необходимо указать все обязательные параметры или использовать интерактивный режим (-i/--interactive)")
-	}
-
-	return domain.Product{
-		Type:         domain.ProductType(*productType),
-		Price:        *price,
-		PhoneNumber:  *phone,
-		PeriodMonths: *months,
-	}, nil
+	return flags.ToProduct(), nil
 }
 
-func (h *Handler) collectInteractiveInputWithDefaults(productType string, price float64, phone string, months int) (domain.Product, error) {
+func (h *Handler) collectInteractiveInputWithDefaults(flags *Flags) (domain.Product, error) {
 	reader := bufio.NewReader(os.Stdin)
-
 	var product domain.Product
 
+	product.Type = h.promptProductType(reader, flags.ProductType)
+
+	product.Price = h.promptPrice(reader, flags.Price)
+
+	product.PhoneNumber = h.promptPhoneNumber(reader, flags.PhoneNumber)
+
+	product.PeriodMonths = h.promptInstallmentPeriod(reader, flags.Months, product.Type)
+
+	return product, nil
+}
+
+func (h *Handler) collectInteractiveInput() (domain.Product, error) {
+	return h.collectInteractiveInputWithDefaults(&Flags{})
+}
+
+func (h *Handler) promptProductType(reader *bufio.Reader, defaultValue string) domain.ProductType {
 	for {
 		defaultChoice := ""
-		switch strings.ToLower(productType) {
+		switch strings.ToLower(defaultValue) {
 		case "смартфон":
 			defaultChoice = "1"
 		case "компьютер":
@@ -127,22 +91,22 @@ func (h *Handler) collectInteractiveInputWithDefaults(productType string, price 
 
 		switch input {
 		case "1":
-			product.Type = domain.Smartphone
+			return domain.Smartphone
 		case "2":
-			product.Type = domain.Computer
+			return domain.Computer
 		case "3":
-			product.Type = domain.TV
+			return domain.TV
 		default:
 			fmt.Println("Ошибка: выберите число от 1 до 3")
-			continue
 		}
-		break
 	}
+}
 
+func (h *Handler) promptPrice(reader *bufio.Reader, defaultValue float64) float64 {
 	for {
 		prompt := "Введите цену товара (сомони)"
-		if price > 0 {
-			prompt += fmt.Sprintf(" [%s]", h.formatPrice(price))
+		if defaultValue > 0 {
+			prompt += fmt.Sprintf(" [%s]", h.formatPrice(defaultValue))
 		}
 		prompt += ": "
 
@@ -150,9 +114,8 @@ func (h *Handler) collectInteractiveInputWithDefaults(productType string, price 
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(input)
 
-		if input == "" && price > 0 {
-			product.Price = price
-			break
+		if input == "" && defaultValue > 0 {
+			return defaultValue
 		}
 
 		parsedPrice, err := strconv.ParseFloat(input, 64)
@@ -161,14 +124,15 @@ func (h *Handler) collectInteractiveInputWithDefaults(productType string, price 
 			continue
 		}
 
-		product.Price = math.Round(parsedPrice*100) / 100
-		break
+		return math.Round(parsedPrice*100) / 100
 	}
+}
 
+func (h *Handler) promptPhoneNumber(reader *bufio.Reader, defaultValue string) string {
 	for {
 		prompt := "Введите номер телефона (в формате 992XXXXXXXXX)"
-		if phone != "" {
-			prompt += fmt.Sprintf(" [%s]", phone)
+		if defaultValue != "" {
+			prompt += fmt.Sprintf(" [%s]", defaultValue)
 		}
 		prompt += ": "
 
@@ -176,9 +140,8 @@ func (h *Handler) collectInteractiveInputWithDefaults(productType string, price 
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(input)
 
-		if input == "" && phone != "" {
-			product.PhoneNumber = phone
-			break
+		if input == "" && defaultValue != "" {
+			return defaultValue
 		} else if input == "" {
 			fmt.Println("Ошибка: номер телефона не может быть пустым")
 			continue
@@ -196,12 +159,13 @@ func (h *Handler) collectInteractiveInputWithDefaults(productType string, price 
 			continue
 		}
 
-		product.PhoneNumber = cleanInput
-		break
+		return cleanInput
 	}
+}
 
+func (h *Handler) promptInstallmentPeriod(reader *bufio.Reader, defaultValue int, productType domain.ProductType) int {
 	minPeriod, maxPeriod := 0, 0
-	switch product.Type {
+	switch productType {
 	case domain.Smartphone:
 		minPeriod, maxPeriod = 3, 9
 	case domain.Computer:
@@ -212,21 +176,17 @@ func (h *Handler) collectInteractiveInputWithDefaults(productType string, price 
 
 	for {
 		prompt := fmt.Sprintf("Введите срок рассрочки (от %d до %d месяцев)", minPeriod, maxPeriod)
-		if months >= minPeriod && months <= maxPeriod {
-			prompt += fmt.Sprintf(" [%d]", months)
+		if defaultValue > 0 {
+			prompt += fmt.Sprintf(" [%d]", defaultValue)
 		}
 		prompt += ": "
-		fmt.Print(prompt)
 
+		fmt.Print(prompt)
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(input)
 
-		if input == "" && months >= minPeriod && months <= maxPeriod {
-			product.PeriodMonths = months
-			break
-		} else if input == "" {
-			fmt.Printf("Ошибка: введите число от %d до %d\n", minPeriod, maxPeriod)
-			continue
+		if input == "" && defaultValue > 0 {
+			return defaultValue
 		}
 
 		parsedMonths, err := strconv.Atoi(input)
@@ -234,17 +194,9 @@ func (h *Handler) collectInteractiveInputWithDefaults(productType string, price 
 			fmt.Printf("Ошибка: введите число от %d до %d\n", minPeriod, maxPeriod)
 			continue
 		}
-		product.PeriodMonths = parsedMonths
-		break
+
+		return parsedMonths
 	}
-
-	fmt.Println()
-
-	return product, nil
-}
-
-func (h *Handler) collectInteractiveInput() (domain.Product, error) {
-	return h.collectInteractiveInputWithDefaults("", 0, "", 0)
 }
 
 func (h *Handler) Run() error {
