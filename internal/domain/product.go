@@ -44,14 +44,21 @@ func (p *Product) Validate() error {
 		return fmt.Errorf("%w: %s", ErrInvalidProductType, p.Type)
 	}
 
-	minPeriod, maxPeriod := p.getValidPeriods()
-
-	if p.PeriodMonths < minPeriod || p.PeriodMonths > maxPeriod {
+	min, max := p.getValidPeriods()
+	if p.PeriodMonths < min || p.PeriodMonths > max {
 		return fmt.Errorf("%w: для %s допустимый срок от %d до %d месяцев",
-			ErrInvalidPeriod, p.Type, minPeriod, maxPeriod)
+			ErrInvalidPeriod, p.Type, min, max)
 	}
 
-	if (p.PeriodMonths-3)%3 != 0 || p.PeriodMonths < 3 || p.PeriodMonths > 24 {
+	validPeriod := false
+	for _, period := range validPeriods {
+		if p.PeriodMonths == period {
+			validPeriod = true
+			break
+		}
+	}
+
+	if !validPeriod {
 		return fmt.Errorf("%w: допустимые значения: %v", ErrInvalidPeriod, validPeriods)
 	}
 
@@ -67,7 +74,7 @@ func (p *Product) getValidPeriods() (int, int) {
 	case TV:
 		return 3, 18
 	default:
-		return 0, 0
+		return 3, 24
 	}
 }
 
