@@ -44,22 +44,22 @@ func (p *Product) Validate() error {
 		return fmt.Errorf("%w: %s", ErrInvalidProductType, p.Type)
 	}
 
-	valid := false
+	min, max := p.getValidPeriods()
+	if p.PeriodMonths < min || p.PeriodMonths > max {
+		return fmt.Errorf("%w: для %s допустимый срок от %d до %d месяцев",
+			ErrInvalidPeriod, p.Type, min, max)
+	}
+
+	validPeriod := false
 	for _, period := range validPeriods {
 		if p.PeriodMonths == period {
-			valid = true
+			validPeriod = true
 			break
 		}
 	}
 
-	if !valid {
+	if !validPeriod {
 		return fmt.Errorf("%w: допустимые значения: %v", ErrInvalidPeriod, validPeriods)
-	}
-
-	_, max := p.getValidPeriods()
-	if p.PeriodMonths > max {
-		return fmt.Errorf("%w: для %s максимальный срок %d месяцев",
-			ErrInvalidPeriod, p.Type, max)
 	}
 
 	return nil
